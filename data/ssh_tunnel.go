@@ -71,7 +71,7 @@ func (t *SSHTunnel) findFreePort() (int, error) {
 // loadSSHKey loads SSH private key from file
 func (t *SSHTunnel) loadSSHKey(keyPath string) (ssh.Signer, error) {
 	expandedPath := os.ExpandEnv(keyPath)
-	if expandedPath[:2] == "~/" {
+	if len(expandedPath) >= 2 && expandedPath[:2] == "~/" {
 		home, _ := os.UserHomeDir()
 		expandedPath = filepath.Join(home, expandedPath[2:])
 	}

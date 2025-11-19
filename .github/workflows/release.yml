@@ -1,0 +1,209 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+
+env:
+  GO_VERSION: '1.21'
+  PROJECT_NAME: db-backup
+
+jobs:
+  build:
+    name: Build All Platforms
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            binary_name: db-backup-linux-amd64
+            archive_ext: tar.gz
+          - os: ubuntu-latest
+            goos: linux
+            goarch: arm64
+            binary_name: db-backup-linux-arm64
+            archive_ext: tar.gz
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            binary_name: db-backup-darwin-amd64
+            archive_ext: tar.gz
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            binary_name: db-backup-darwin-arm64
+            archive_ext: tar.gz
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            binary_name: db-backup-windows-amd64.exe
+            archive_ext: zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Get dependencies
+        run: go mod download
+
+      - name: Get version info
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_TIME: ${{ github.event.head_commit.timestamp || github.run_started_at }}
+          GIT_COMMIT: ${{ github.sha }}
+        run: |
+          mkdir -p build
+          go build -ldflags "-X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME} -X main.GitCommit=${GIT_COMMIT}" \
+            -o build/${{ matrix.binary_name }} .
+
+      - name: Create checksum
+        shell: bash
+        run: |
+          cd build
+          if [[ "${{ matrix.binary_name }}" == *.exe ]]; then
+            sha256sum ${{ matrix.binary_name }} > ${{ matrix.binary_name }}.sha256
+          else
+            shasum -a 256 ${{ matrix.binary_name }} > ${{ matrix.binary_name }}.sha256
+          fi
+
+      - name: Create archive
+        shell: bash
+        run: |
+          cd build
+          if [[ "${{ matrix.archive_ext }}" == "zip" ]]; then
+            zip ${{ matrix.binary_name }}.zip ${{ matrix.binary_name }} ${{ matrix.binary_name }}.sha256
+          else
+            tar -czf ${{ matrix.binary_name }}.${{ matrix.archive_ext }} ${{ matrix.binary_name }} ${{ matrix.binary_name }}.sha256
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: build/${{ matrix.binary_name }}.${{ matrix.archive_ext }}
+          retention-days: 90
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version info
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create combined checksums file
+        run: |
+          cd release-artifacts
+          find . -name "*.sha256" -exec sh -c 'cat "$1" >> ../checksums.txt' _ {} \;
+          cd ..
+          echo "" >> checksums.txt
+          echo "All checksums:" >> checksums.txt
+          cat release-artifacts/*/*.sha256 >> checksums.txt 2>/dev/null || true
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          cat > release_notes.md << EOF
+          ## Release ${{ steps.version.outputs.version }}
+          
+          ### Downloads
+          
+          **Linux:**
+          - [db-backup-linux-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/db-backup-linux-amd64.tar.gz)
+          - [db-backup-linux-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/db-backup-linux-arm64.tar.gz)
+          
+          **macOS:**
+          - [db-backup-darwin-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/db-backup-darwin-amd64.tar.gz)
+          - [db-backup-darwin-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/db-backup-darwin-arm64.tar.gz)
+          
+          **Windows:**
+          - [db-backup-windows-amd64.zip](https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/db-backup-windows-amd64.zip)
+          
+          ### Installation
+          
+          1. Download the appropriate binary for your platform
+          2. Extract the archive
+          3. Move the binary to a directory in your PATH
+          4. Make it executable (Unix): \`chmod +x db-backup-*\`
+          
+          ### Verification
+          
+          Verify the integrity of downloaded files using the checksums:
+          
+          \`\`\`bash
+          # Linux/macOS
+          sha256sum -c db-backup-*.sha256
+          
+          # Or using shasum on macOS
+          shasum -a 256 -c db-backup-*.sha256
+          \`\`\`
+          EOF
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: |
+            release-artifacts/**/*
+            checksums.txt
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

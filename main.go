@@ -1,12 +1,12 @@
 package main
 
 import (
-	"github.com/magicstack-llp/db-backup-go/interface"
+	cli "github.com/magicstack-llp/db-backup-go/interface"
 	"github.com/spf13/cobra"
 )
 
 func main() {
-	rootCmd := interface.NewRootCmd()
+	rootCmd := cli.NewRootCmd()
 	if err := rootCmd.Execute(); err != nil {
 		cobra.CheckErr(err)
 	}

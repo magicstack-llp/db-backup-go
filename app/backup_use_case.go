@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/magicstack-llp/db-backup-go/data"
-	"github.com/magicstack-llp/db-backup-go/domain"
 )
 
 // BackupUseCase orchestrates the backup process

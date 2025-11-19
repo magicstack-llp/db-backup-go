@@ -65,6 +65,7 @@ jobs:
 
       - name: Get version info
         id: version
+        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
@@ -130,6 +131,7 @@ jobs:
 
       - name: Get version info
         id: version
+        shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"

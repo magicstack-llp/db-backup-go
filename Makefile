@@ -3,7 +3,7 @@
 # Build configuration
 BINARY_NAME=db-backup
 BUILD_DIR=build
-VERSION?=0.1.0
+VERSION?=0.1.1
 BUILD_TIME=$(shell date +%Y%m%d-%H%M%S)
 GIT_COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 

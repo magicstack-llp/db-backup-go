@@ -104,7 +104,12 @@ jobs:
         run: |
           cd build
           if [[ "${{ matrix.archive_ext }}" == "zip" ]]; then
-            zip ${{ matrix.binary_name }}.zip ${{ matrix.binary_name }} ${{ matrix.binary_name }}.sha256
+            if command -v zip &> /dev/null; then
+              zip ${{ matrix.binary_name }}.zip ${{ matrix.binary_name }} ${{ matrix.binary_name }}.sha256
+            else
+              # Use PowerShell on Windows if zip is not available
+              powershell -Command "Compress-Archive -Path '${{ matrix.binary_name }}','${{ matrix.binary_name }}.sha256' -DestinationPath '${{ matrix.binary_name }}.zip' -Force"
+            fi
           else
             tar -czf ${{ matrix.binary_name }}.${{ matrix.archive_ext }} ${{ matrix.binary_name }} ${{ matrix.binary_name }}.sha256
           fi
